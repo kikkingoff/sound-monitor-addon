@@ -126,6 +126,10 @@ input_number:
     unit_of_measurement: "dB"
 ```
 
+> ⚠️ Le nom de l'entité doit correspondre au slug du nom de la source.
+> Exemple : `nom: "Entree"` → `input_number.seuil_entree`
+> Les caractères spéciaux et accents sont automatiquement convertis.
+
 ---
 
 ## Exemple d'automation
