@@ -1,0 +1,40 @@
+name: "Sound Monitor"
+description: "Surveillance niveau sonore via flux RTSP/HTTP — multi-sources"
+version: "2.2.0"
+slug: audio_monitor
+init: false
+arch:
+  - amd64
+full_access: true
+options:
+  mqtt_host: "192.168.1.x"
+  mqtt_port: 1883
+  mqtt_user: "mqtt_user"
+  mqtt_password: "mqtt_password"
+  ha_token: "your_long_lived_token"
+  anti_spam_minutes: 2
+  seuil_global: 0
+  sources:
+    - nom: "Camera 1"
+      rtsp_url: "rtsp://user:password@192.168.1.x:554//stream"
+      seuil: 75
+      variation_seuil: 15
+      calibration_secs: 10
+      recalibration_interval: 3600
+      publish_interval: 5
+schema:
+  mqtt_host: str
+  mqtt_port: int
+  mqtt_user: str
+  mqtt_password: str
+  ha_token: str
+  anti_spam_minutes: int(1,60)
+  seuil_global: int(0,100)
+  sources:
+    - nom: str
+      rtsp_url: str
+      seuil: int(40,100)
+      variation_seuil: int(5,30)
+      calibration_secs: int(5,60)
+      recalibration_interval: int(600,86400)
+      publish_interval: int(1,30)
