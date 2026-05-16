@@ -317,7 +317,7 @@ class SourceMonitor:
         buf = []
         t0  = time.time()
         while time.time() - t0 < self.calibration_secs:
-            data = proc.stdout.read(2048)
+            data = proc.stdout.read(4096)
             if not data:
                 break
             samples = np.frombuffer(data, dtype=np.int16).astype(np.float32)
@@ -365,7 +365,7 @@ class SourceMonitor:
 
             try:
                 while not self._stop:
-                    data = proc.stdout.read(2048)
+                    data = proc.stdout.read(4096)
                     if not data or proc.poll() is not None:
                         log(self.nom, "Flux interrompu — reconnexion 10s")
                         self.set_connected(False)
@@ -377,7 +377,7 @@ class SourceMonitor:
                     now = time.time()
 
                     # Niveau instantané
-                    if now - last_instant >= 1:
+                    if now - last_instant >= 2:
                         self.mqtt.publish(self.T_INST, str(db))
                         last_instant = now
 
