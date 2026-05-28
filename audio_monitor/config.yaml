@@ -1,11 +1,11 @@
 name: "Sound Monitor"
 description: "Surveillance niveau sonore via flux RTSP/HTTP — multi-sources"
-version: "2.2.0"
+version: "2.2.1"
 slug: audio_monitor
 init: false
 arch:
   - amd64
-full_access: true
+host_network: true
 options:
   mqtt_host: "192.168.1.x"
   mqtt_port: 1883
@@ -30,6 +30,7 @@ schema:
   ha_token: str
   anti_spam_minutes: int(1,60)
   seuil_global: int(0,100)
+  ha_url: str?
   sources:
     - nom: str
       rtsp_url: str

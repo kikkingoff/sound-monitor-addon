@@ -1,5 +1,18 @@
 # Sound Monitor — Changelog
 
+## v2.2.1
+- Sécurité : `run.sh` ne logue plus les credentials (ha_token, mqtt_password, RTSP URLs)
+- Sécurité : `full_access: true` remplacé par `host_network: true` dans config.yaml
+- Bug : `is_silence_mode()` mis en cache 30s — n'appelle plus l'API REST HA à chaque frame audio
+- Bug : `proc.terminate()` suivi d'un `proc.wait(timeout=5)` pour éviter les processus ffmpeg zombies
+- Bug : variable locale `warnings` renommée `soft_errors` (shadowing du module stdlib corrigé)
+- Bug : `stderr=subprocess.DEVNULL` sur ffmpeg — pipe bloquant supprimé
+- Bug : `retain=True` ajouté sur toutes les publications uptime (cohérence avec les autres sensors)
+- Threading : watchdog fait un `join(timeout=1)` sur le thread mort avant restart
+- Config : `ha_url` optionnel dans le schéma (utile si le hostname HA est non-standard)
+- Client MQTT ID dynamique basé sur VERSION (plus de `v18` figé)
+- `DeprecationWarning` supprimé uniquement pour le module `paho` (plus global)
+
 ## v2.2.0
 - Watchdog thread — redémarre automatiquement les sources mortes
 - Sensor `binary_sensor.{slug}_connecte` — état connexion par source

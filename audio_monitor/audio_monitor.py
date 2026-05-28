@@ -13,7 +13,7 @@ audio_monitor.py v18 — Multi-sources
 - CHANGELOG intégré
 """
 
-VERSION = "2.2.0"
+VERSION = "2.2.1"
 
 CHANGELOG = """
 v2.2.0 — Watchdog, sensor connexion/uptime, mode silence, validation config
@@ -22,8 +22,6 @@ v2.0.0 — Refactor multi-sources avec threads
 v1.x   — Version mono-source
 """
 
-import warnings
-warnings.filterwarnings("ignore", category=DeprecationWarning)
 import argparse
 import json
 import time
@@ -259,7 +257,7 @@ class SourceMonitor:
         self.mqtt.publish(self.T_CONNEXION, "ON" if self._connected else "OFF", retain=True)
         if self._connect_time:
             uptime = int((datetime.datetime.now() - self._connect_time).total_seconds() / 60)
-            self.mqtt.publish(self.T_UPTIME, str(uptime))
+            self.mqtt.publish(self.T_UPTIME, str(uptime), retain=True)
 
     def set_connected(self, connected):
         """Met à jour l'état de connexion."""
@@ -272,7 +270,7 @@ class SourceMonitor:
         elif not connected and was_connected:
             self._connect_time = None
             self.mqtt.publish(self.T_CONNEXION, "OFF", retain=True)
-            self.mqtt.publish(self.T_UPTIME, "0")
+            self.mqtt.publish(self.T_UPTIME, "0", retain=True)
             log(self.nom, "Connexion perdue")
 
     def get_seuil_ha(self):
@@ -310,7 +308,7 @@ class SourceMonitor:
                 "pipe:1"
             ]
         log(self.nom, f"Commande : {' '.join(cmd[:4])}...")
-        return subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        return subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
 
     def calibrate(self, proc):
         log(self.nom, f"Calibration {self.calibration_secs}s...")
@@ -341,8 +339,7 @@ class SourceMonitor:
 
             time.sleep(3)
             if proc.poll() is not None:
-                err = proc.stderr.read().decode()
-                log(self.nom, f"ffmpeg mort : {err[:150]} — retry 30s")
+                log(self.nom, "ffmpeg mort au démarrage — retry 30s")
                 self.set_connected(False)
                 time.sleep(30)
                 continue
@@ -360,6 +357,8 @@ class SourceMonitor:
             last_uptime       = 0
             seuil_refresh     = 0
             niveau_buffer     = []
+            silence_cached    = False
+            silence_refresh   = 0
 
             log(self.nom, f"Surveillance active — seuil {self.seuil}dB")
 
@@ -384,7 +383,7 @@ class SourceMonitor:
                     # Uptime toutes les minutes
                     if now - last_uptime >= 60 and self._connect_time:
                         uptime = int((datetime.datetime.now() - self._connect_time).total_seconds() / 60)
-                        self.mqtt.publish(self.T_UPTIME, str(uptime))
+                        self.mqtt.publish(self.T_UPTIME, str(uptime), retain=True)
                         last_uptime = now
 
                     # Refresh seuil HA
@@ -395,13 +394,18 @@ class SourceMonitor:
                             log(self.nom, f"Seuil mis à jour : {old_seuil}dB → {self.seuil}dB")
                         seuil_refresh = now
 
+                    # Refresh mode silence (cache 30s)
+                    if now - silence_refresh >= 30:
+                        silence_cached = is_silence_mode(self.ha_token)
+                        silence_refresh = now
+
                     # Recalibration
                     if now - last_calibration >= self.recalibration_interval:
                         self.calibrate(proc)
                         last_calibration = now
 
                     # Mode silence — ignore les alertes
-                    if is_silence_mode(self.ha_token):
+                    if silence_cached:
                         self.alerte_count = 0
                         self.silence_count += 1
                         if self.alerte_active and self.silence_count >= SILENCE_TRIG:
@@ -472,8 +476,12 @@ class SourceMonitor:
 
             try:
                 proc.terminate()
+                proc.wait(timeout=5)
             except Exception:
-                pass
+                try:
+                    proc.kill()
+                except Exception:
+                    pass
             if not self._stop:
                 time.sleep(10)
 
@@ -498,7 +506,8 @@ def watchdog(monitors):
         for mon in monitors:
             if not mon.is_alive() and not mon._stop:
                 log("WATCHDOG", f"Thread {mon.nom} mort — redémarrage")
-                mon._stop = False
+                if mon._thread:
+                    mon._thread.join(timeout=1)
                 mon.start()
 
 
@@ -531,10 +540,10 @@ def main():
 
     # Validation
     errors = validate_config(config)
-    warnings = [e for e in errors if "désactivés" in e]
-    critiques = [e for e in errors if "désactivés" not in e]
+    soft_errors = [e for e in errors if "désactivés" in e]
+    critiques   = [e for e in errors if "désactivés" not in e]
 
-    for w in warnings:
+    for w in soft_errors:
         log("CONFIG", f"⚠️  {w}")
     for e in critiques:
         log("CONFIG", f"❌ {e}")
@@ -542,8 +551,9 @@ def main():
         log("MAIN", "Erreurs critiques — arrêt")
         sys.exit(1)
 
-    global _ha_token
+    global _ha_token, HA_URL
     _ha_token     = config.get("ha_token", "")
+    HA_URL        = config.get("ha_url", HA_URL)
     mqtt_host     = config.get("mqtt_host")
     mqtt_port     = config.get("mqtt_port", 1883)
     mqtt_user     = config.get("mqtt_user", "")
@@ -556,7 +566,7 @@ def main():
     log("MAIN", f"{len(sources)} source(s) configurée(s)")
 
     # Connexion MQTT
-    client = mqtt.Client(client_id="sound_monitor_v18")
+    client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2, client_id=f"sound_monitor_{VERSION.replace('.', '_')}")
     if mqtt_user:
         client.username_pw_set(mqtt_user, mqtt_password)
     client.on_message = on_mqtt_message
