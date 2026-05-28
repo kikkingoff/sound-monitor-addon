@@ -5,7 +5,7 @@ RUN apk add --no-cache \
     alsa-lib \
     ffmpeg
 
-RUN pip install --no-cache-dir numpy paho-mqtt requests
+RUN pip install --no-cache-dir numpy==1.26.4 paho-mqtt==2.1.0 requests==2.32.3
 
 RUN mkdir -p /app
 

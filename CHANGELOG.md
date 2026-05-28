@@ -1,5 +1,12 @@
 # Sound Monitor — Changelog
 
+## v2.3.0
+- Reconnexion MQTT automatique : `reconnect_delay_set(5s→60s)` + callback `on_disconnect`
+- Persistance de l'historique des alertes dans `/data/historique_{slug}.json` — survive aux redémarrages
+- Timestamps des alertes en `dd/mm HH:MM` (plus de perte de contexte sur minuit)
+- `historique` migré vers `collections.deque(maxlen=10)` — insert O(1)
+- Dépendances Dockerfile épinglées : `numpy==1.26.4`, `paho-mqtt==2.1.0`, `requests==2.32.3`
+
 ## v2.2.1
 - Sécurité : `run.sh` ne logue plus les credentials (ha_token, mqtt_password, RTSP URLs)
 - Sécurité : `full_access: true` remplacé par `host_network: true` dans config.yaml

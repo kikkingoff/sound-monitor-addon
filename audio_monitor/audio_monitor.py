@@ -13,7 +13,7 @@ audio_monitor.py v18 — Multi-sources
 - CHANGELOG intégré
 """
 
-VERSION = "2.2.1"
+VERSION = "2.3.0"
 
 CHANGELOG = """
 v2.2.0 — Watchdog, sensor connexion/uptime, mode silence, validation config
@@ -33,6 +33,7 @@ import numpy as np
 import paho.mqtt.client as mqtt
 import re
 import sys
+from collections import deque
 
 HA_URL       = "http://homeassistant.local:8123"
 MAX_HISTO    = 10
@@ -147,11 +148,12 @@ class SourceMonitor:
             "manufacturer": "HA Addon"
         }
 
+        self._histo_file      = f"/data/historique_{self.slug}.json"
         self.alerte_active    = False
         self.alerte_count     = 0
         self.silence_count    = 0
         self.last_alerte_time = None
-        self.historique       = []
+        self.historique       = self._load_historique()
         self.bruit_fond       = 0.0
         self.db_precedent     = 0.0
         self.seuil            = self.seuil_defaut
@@ -272,6 +274,20 @@ class SourceMonitor:
             self.mqtt.publish(self.T_CONNEXION, "OFF", retain=True)
             self.mqtt.publish(self.T_UPTIME, "0", retain=True)
             log(self.nom, "Connexion perdue")
+
+    def _load_historique(self):
+        try:
+            with open(self._histo_file) as f:
+                return deque(json.load(f), maxlen=MAX_HISTO)
+        except Exception:
+            return deque(maxlen=MAX_HISTO)
+
+    def _save_historique(self):
+        try:
+            with open(self._histo_file, "w") as f:
+                json.dump(list(self.historique), f)
+        except Exception as e:
+            log(self.nom, f"Erreur sauvegarde historique : {e}")
 
     def get_seuil_ha(self):
         if self.use_global_seuil:
@@ -447,11 +463,10 @@ class SourceMonitor:
                         self.mqtt.publish(self.T_ALERTE, "ON")
                         raison = f"seuil ({db:.1f}dB)" if depasse else f"variation (+{variation:.1f}dB)"
                         log(self.nom, f"ALERTE — {db:.1f}dB ({raison})")
-                        ts_str = datetime.datetime.now().strftime("%H:%M")
-                        self.historique.insert(0, f"{ts_str} {db:.1f}dB ({raison})")
-                        if len(self.historique) > MAX_HISTO:
-                            self.historique.pop()
+                        ts_str = datetime.datetime.now().strftime("%d/%m %H:%M")
+                        self.historique.appendleft(f"{ts_str} {db:.1f}dB ({raison})")
                         self.mqtt.publish(self.T_HISTO, " | ".join(self.historique))
+                        self._save_historique()
 
                     # Désactivation alerte
                     if self.alerte_active and self.silence_count >= SILENCE_TRIG:
@@ -523,6 +538,11 @@ def on_mqtt_message(client, userdata, msg):
         log("MQTT", f"Erreur callback : {e}")
 
 
+def on_mqtt_disconnect(client, userdata, disconnect_flags, reason_code, properties):
+    if reason_code != 0:
+        log("MQTT", f"Déconnecté (code {reason_code}) — reconnexion automatique")
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--config", default="/data/options.json")
@@ -569,9 +589,11 @@ def main():
     client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2, client_id=f"sound_monitor_{VERSION.replace('.', '_')}")
     if mqtt_user:
         client.username_pw_set(mqtt_user, mqtt_password)
-    client.on_message = on_mqtt_message
+    client.on_message    = on_mqtt_message
+    client.on_disconnect = on_mqtt_disconnect
 
     try:
+        client.reconnect_delay_set(min_delay=5, max_delay=60)
         client.connect(mqtt_host, mqtt_port, keepalive=60)
         client.subscribe("homeassistant/status")
         client.loop_start()
